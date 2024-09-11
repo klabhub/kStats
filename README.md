@@ -3,6 +3,8 @@
 A Matlab toolbox for statistical analysis used and developed by the Krekelberg Neuroscience Laboratory, Rutgers University - Newark.
 Note that we have a different toolbox for Bayes Factor analysis (https://github.com/klabhub/bayesFactor).
 
+If you use these tools in your work, please cite [![DOI](https://zenodo.org/badge/855218886.svg)](https://zenodo.org/doi/10.5281/zenodo.13744649)
+
 Bart Krekelberg -  Sept 2024.
 
 The ***kStats*** toolbox consists of the following packages/namespaces:
