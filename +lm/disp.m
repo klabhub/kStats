@@ -1,4 +1,4 @@
-function out = disp(m,factors,showEffects,tol)
+function out = disp(m,factors,showEffects,tol,floatFmt)
 % Convenience disp function to show Anova results of a linear model in
 % standard notation for easy copy and paste.
 %
@@ -14,10 +14,12 @@ function out = disp(m,factors,showEffects,tol)
 %                       the random effects.
 %                       'RAW' - do not scale
 % tol = Tolerance for partial eta squared confidence intervals
+% floatFmt = Format string used to display floats ['%3.3g']
 % OUTPUT
 % out = the string that is also written to the command line .
 %
 % BK - Feb 2020
+
 if nargin<2 || isempty(factors)
     factors =m.anova.Term(2:end);
 end
@@ -29,6 +31,9 @@ if islogical(showEffects)
 end
 if nargin <4
     tol =0.001;
+end
+if nargin <5
+    floatFmt = '%3.3g';
 end
 if nargout>0
     out = '';
@@ -55,11 +60,11 @@ for f=1:numel(factors)
     factor = factors{f};
     stay = strcmpi(m.anova.Term,factor);
     
-    fmt = '\t %s: F(%d,%d)=%3.1f, p=%3.2g,';
+    fmt = ['\t %s: F(%d,%d)= ' floatFmt ', p=' floatFmt ','];
     vars = {factor,m.anova.DF1(stay,1),m.anova.DF2(stay,1),m.anova.FStat(stay,1),m.anova.pValue(stay,1)};
     
     if hasEta
-        fmt = [fmt eta '=%3.3g CI: [%4.4g, %4.4g]'];     %#ok<AGROW>
+        fmt = [fmt eta '=' floatFmt  ' CI: [' floatFmt ',' floatFmt ']'];     %#ok<AGROW>
         vars = cat(2,vars,{partialEta(stay),partialEtaLB(stay),partialEtaUB(stay)});
     end
     
@@ -99,6 +104,7 @@ for f=1:numel(factors)
     % a multilevel categorical factor).
     
     fe = fe(stayFe)/scale;
+    
     [fe,ix] = max(fe,[],'ComparisonMethod','abs');
     low = m.Coefficients.Lower(stayFe);
     low = low(ix)/scale;
@@ -106,9 +112,9 @@ for f=1:numel(factors)
     up = up(ix)/scale;
     vars = cat(2,vars,{fe,low,up});
     if sum(stayFe)>1
-        fmt = cat(2, fmt ,[' (Max Effect: %3.3g ' units ' CI [%4.4g, %4.4g])']);
+        fmt = cat(2, fmt ,[' (Max Effect: ' floatFmt ' ' units ' CI [' floatFmt ',' floatFmt '])']);
     else
-        fmt = cat(2, fmt ,[' (Effect: %3.3g ' units '  CI [%4.4g, %4.4g])']);
+        fmt = cat(2, fmt ,[' (Effect: ' floatFmt ' ' units '  CI [' floatFmt ',' floatFmt '])']);
     end
     
     fprintf(style,[fmt '\n'],vars{:});
