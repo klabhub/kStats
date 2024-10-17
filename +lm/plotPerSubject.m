@@ -24,7 +24,7 @@ arguments
     pv.alpha (1,1) double = 0.05;
 end
 
-assert(all(pv.coefficients=="") || all(ismember(pv.coefficients,m.CoefficientNames)),"pv.coefficients should list the names of coefficients in the model");
+assert(all(pv.coefficients=="") || all(ismember(pv.coefficients,m.Coefficients.Name)),"pv.coefficients should list the names of coefficients in the model");
 assert(all(pv.zscore =="") || all(ismember(pv.zscore,m.CoefficientNames)),"pv.zscore should list the names of coefficients in the model");
 %% Extract the data from the full model,
 T = m.Variables(~m.ObservationInfo.Excluded,m.VariableInfo.InModel | ismember(m.VariableNames,m.Formula.ResponseName));
@@ -36,7 +36,7 @@ groupLevels = unique(T.(groupName));
 formula = m.Formula.char;
 
 %% Createa the output tables and add the results for the full sample
-feNames = m.CoefficientNames;
+feNames = m.Coefficients.Name;
 if pv.coefficients == ""
     pv.coefficients = string(feNames(2:end));
 end
@@ -84,7 +84,7 @@ for s=groupLevels'
         % Store in the output tables
         fe = thisGlm.fixedEffects;
         fe = fe(keepCoeffs);
-        thisFeNames = thisGlm.CoefficientNames;
+        thisFeNames = thisGlm.Coefficients.Name;
         thisFeNames = thisFeNames(keepCoeffs);
         effectsTable = [effectsTable   table(fe,'VariableNames',string(s))]; %#ok<AGROW>
         ci = [thisGlm.Coefficients.Lower thisGlm.Coefficients.Upper];
