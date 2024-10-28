@@ -22,6 +22,7 @@ arguments
     pv.showGroup (1,1) logical = true       % Add the group level result as a red line
     pv.NUMPRECISION (1,1) double {mustBeInteger,mustBeNonnegative} =3; % num2str for coefficients
     pv.alpha (1,1) double = 0.05;
+    pv.groupingVariable (1,:) string = ""  % The name of the variable that defines the grouping. Defaults to all grouping variables.
 end
 
 assert(all(pv.coefficients=="") || all(ismember(pv.coefficients,m.Coefficients.Name)),"pv.coefficients should list the names of coefficients in the model");
@@ -30,9 +31,11 @@ assert(all(pv.zscore =="") || all(ismember(pv.zscore,m.CoefficientNames)),"pv.zs
 T = m.Variables(~m.ObservationInfo.Excluded,m.VariableInfo.InModel | ismember(m.VariableNames,m.Formula.ResponseName));
 dummyVarCoding = lm.dummyVarCoding(m);
 % Determine which variable represents the grouping (e.g. subject)
-assert(isscalar(m.Formula.GroupingVariableNames) && (isscalar(m.Formula.GroupingVariableNames{1}{1}) || ischar(m.Formula.GroupingVariableNames{1}{1})),'ploePerSubject currently only works for a single grouping variable (e.g. (1|subject))')
-groupName = m.Formula.GroupingVariableNames{1}{1};
-groupLevels = unique(T.(groupName));
+if pv.groupingVariable ==""
+    % Use all 
+    pv.groupingVariable = string(m.Formula.GroupingVariableNames{:});
+end   
+groupLevels = unique(T(:,pv.groupingVariable),"rows");
 formula = m.Formula.char;
 
 %% Createa the output tables and add the results for the full sample
@@ -50,16 +53,16 @@ ciTable  = table(ci(keepCoeffs,:),'RowNames',feNames,'VariableNames',{'Group'});
 pTable  = table(m.Coefficients.pValue(keepCoeffs,:),'RowNames',feNames,'VariableNames',{'Group'});
 
 %% Now fit each group level separately and add to the tables
-nrGroupLevels = numel(groupLevels);
+nrGroupLevels = height(groupLevels);
 if nargout>3
     models= cell(1,nrGroupLevels);
 end
-sCntr =0;
-for s=groupLevels'
-    sCntr= sCntr+1;
+groupNames= convertvars(groupLevels,@(x)(~isstring(x)),'string');
+for grpCntr=1:nrGroupLevels    
     try
-        % Extract the relevant subset of data for this subjects
-        thisT = T(T.(groupName)==s,:);
+        % Extract the relevant subset of data for this subjects             
+        thisT = innerjoin(T,groupLevels(grpCntr,:));
+        thisGroupName =strjoin(groupNames{grpCntr,:},'/');
         if pv.zscore ~=""
             for factor = pv.zscore
                 thisT.(factor) = zscore(thisT.(factor));
@@ -79,23 +82,23 @@ for s=groupLevels'
             end
         end
         if nargout>3
-            models{sCntr} = thisGlm; %#ok<AGROW>
+            models{grpCntr} = thisGlm; 
         end
         % Store in the output tables
         fe = thisGlm.fixedEffects;
         fe = fe(keepCoeffs);
         thisFeNames = thisGlm.Coefficients.Name;
         thisFeNames = thisFeNames(keepCoeffs);
-        effectsTable = [effectsTable   table(fe,'VariableNames',string(s))]; %#ok<AGROW>
+        effectsTable = [effectsTable   table(fe,'VariableNames',thisGroupName)]; %#ok<AGROW>
         ci = [thisGlm.Coefficients.Lower thisGlm.Coefficients.Upper];
-        ciTable  = [ciTable table(ci(keepCoeffs,:),'VariableNames',string(s))];%#ok<AGROW>
-        pTable = [pTable table(thisGlm.Coefficients.pValue(keepCoeffs),'VariableNames',string(s))]; %#ok<AGROW>
+        ciTable  = [ciTable table(ci(keepCoeffs,:),'VariableNames',thisGroupName)];%#ok<AGROW>
+        pTable = [pTable table(thisGlm.Coefficients.pValue(keepCoeffs),'VariableNames',thisGroupName)]; %#ok<AGROW>
         %Sanity check that the order of FE is the same in the per subject and
         %group model. This can fail if one of the group levels (subjects) does not
         % have a complete set of conditions
         assert(all(strcmpi(feNames,thisFeNames)),'coefficientNames of individual fit NOT matched with group fit! (check ''dummyVarCoding'' settings)');
     catch me
-        fprintf('perSubject lmm for %s failed on %s (%s)\n',formula,s,me.message)
+        fprintf('perSubject lmm for group %s failed (%s) - %s\n',thisGroupName,me.message,formula)        
         continue
     end
 end
@@ -141,7 +144,7 @@ if pv.showHistogram || pv.showLine
             ylim([0 nrGroups]);
             set(gca,'yTickLabels',{})
             if e==1
-                ylabel(groupName + "#")
+                ylabel(thisGroupName + "#")
                 set(gca,'yTick',1:nrGroups,'ytickLabel',groupLevels)
             end
             if ~pv.showHistogram
