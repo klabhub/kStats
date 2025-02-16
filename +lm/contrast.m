@@ -49,8 +49,7 @@ if nargin >2 && ~isempty(B)
         if defineDifference
             TB = TA;  % Start with TA, replace what is in B
             varTypes  = m.VariableInfo.Class(m.VariableInfo.InModel);
-            varNames = m.VariableNames(m.VariableInfo.InModel);  
-            defaultB = setdiff(varNames,cat(2,A(1:2:end),B(1:2:end)))';
+            varNames = m.VariableNames(m.VariableInfo.InModel);              
             for i=1:2:numel(B)
                 thisType = varTypes{strcmpi(B{i},varNames)};
                 TB.(B{i}) = convert(B{i+1},thisType);
@@ -101,28 +100,41 @@ end
 function TX= fillTable(m,propValSpecs)
     % Provide a linear model  (m) and a cell array specifying
     % property/value pairs that define a condition (i.e., one side of the
-    % contrast)
+    % contrast). Values that are not specified in the propValSpecs, are set
+    % to default values that will cancel out in the vA-vB contrast.
     dvCoding = lm.dummyVarCoding(m);
     varTypes  = m.VariableInfo.Class(m.VariableInfo.InModel);
     varNames = m.VariableNames(m.VariableInfo.InModel);
     varRange =m.VariableInfo.Range(m.VariableInfo.InModel);
     nrVars= numel(varTypes);
     TX = table('Size',[1 nrVars],'VariableType',varTypes,'VariableNames',varNames);
+    factors = propValSpecs(1:2:end);
+    if isscalar(factors)
+        % Workaround for ismember that does not work with a single string in a cell
+        factors = factors{1};
+    end
     for i=1:nrVars
-        [tf,ix] =ismember(varNames{i},propValSpecs(1:2:end));
+        [tf,ix] =ismember(varNames{i},factors);              
         if tf
             value = propValSpecs{2*ix};
         else
             switch (varTypes{i})
                 case {'categorical','string','char'}
-                    if ~strcmpi(dvCoding,'Reference')
-                        error('lm.contrast/fillTable only works for reference coded models.')
+                    if strcmpi(dvCoding,'Reference')
+                        % Refernce coded - the first in the range is not
+                        % in the model - pick one that is in the model
+                        % (arbitrary which one - it will cancel out int eh
+                        % vA-vB)
+                       value = varRange{i}(end); 
+                    else 
+                        % Effects coded - the last in the range is not in
+                        % the model - pick the first.
+                        value = varRange{i}(1); 
                     end
-                    value = varRange{i}(1); % Use first in range as the default   - this only works for reference coding                  
                 case 'double'
-                    value = 0; % A continuous variable that was not specified in the contrast (not in X) - set to zero 
+                    value = 0; % A continuous variable that was not specified in the contrast - set to zero 
                 otherwise
-                    error('Non categorical variable (%s)... not sure what to do here...',varNames{i});
+                    error('Non categorical, non numeric variable (%s)... not sure what to do here...',varNames{i});
             end
         end
         TX.(varNames{i}) =value;

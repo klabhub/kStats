@@ -100,9 +100,9 @@ p.addParameter('graph',false,@islogical); % Show graphs
 p.addParameter('nrHeteroBins',1);
 p.parse(m,varargin{:});
 
-if any(m.ObservationInfo.Excluded)
-    error('This model has excluded some observations by using the ''Exclude'' argument to fitglme/fitlme. Please remove the data from the data table instead, then call fit without ''Exclude'' and then pass to this function');
-end
+% if any(m.ObservationInfo.Excluded)
+%     error('This model has excluded some observations by using the ''Exclude'' argument to fitglme/fitlme. Please remove the data from the data table instead, then call fit without ''Exclude'' and then pass to this function');
+% end
 
 % Create local variables to reduce parfor broadcasting
 nrHeteroBins      = p.Results.nrHeteroBins;
@@ -190,9 +190,9 @@ parfor (i=1:nrMonteCarlo ,nrWorkers )
     end   
     % Estimate model parameters based on the current set.
     if isa(m,'GeneralizedLinearMixedModel')
-        thisM =fitglme(setT,char(m.Formula),'Distribution',m.Distribution,'link',m.Link,'DummyVarCoding',dummyVarCoding);
+        thisM =fitglme(setT,char(m.Formula),'Distribution',m.Distribution,'link',m.Link,'DummyVarCoding',dummyVarCoding,'Exclude',m.ObservationInfo.Excluded);
     else
-        thisM =fitlme(setT,char(m.Formula),'DummyVarCoding',dummyVarCoding);
+        thisM =fitlme(setT,char(m.Formula),'DummyVarCoding',dummyVarCoding,'Exclude',m.ObservationInfo.Excluded);
     end
 
     % Store the fixed and random effects
