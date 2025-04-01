@@ -1,16 +1,17 @@
 function [effectsTable,ciTable,pTable,models] = plotPerSubject(m,pv)
-% For a given linear model based on one or more groups (e.g., subjects), refit the model
-% per level of the group (subject) and show the results for a subset of model coefficients
+% For a linear model based on one or more groups (e.g., subjects), refit the model
+% per level of the group (i.e., per subject) and show the results for a subset of model coefficients
 % to get an idea of  variability across the different levels.
 %
 % INPUT
 % glm -  a (generalized) linear mixed model
 %
 % OUTPUT
-% effects  - table with fixed effects. First column is the group, the other
+% effectsTable  - table with fixed effects. First column is the group, the other
 %               columns are the individual subjects
-% ci - table with confidence intervals.
-% p - table with p-values
+% ciTable - table with confidence intervals.
+% pTable - table with p-values
+% models - Cell array with the models per subject.
 %
 % BK - Feb 2020.
 arguments
@@ -22,35 +23,28 @@ arguments
     pv.showGroup (1,1) logical = true       % Add the group level result as a red line
     pv.NUMPRECISION (1,1) double {mustBeInteger,mustBeNonnegative} =3; % num2str for coefficients
     pv.alpha (1,1) double = 0.05;
-    pv.groupingVariable (1,:) string = ""  % The name of the variable that defines the grouping. Defaults to all grouping variables.
+    pv.groupingVariable (1,:) string = ""  % The name of the variable that defines the grouping. Defaults to all grouping variables.    
 end
-
-assert(all(pv.coefficients=="") || all(ismember(pv.coefficients,m.Coefficients.Name)),"pv.coefficients should list the names of coefficients in the model");
+assert(all(pv.coefficients=="") || all(pv.coefficients=="*") || all(ismember(pv.coefficients,m.Coefficients.Name)),"pv.coefficients should list the names of coefficients in the model");
 assert(all(pv.zscore =="") || all(ismember(pv.zscore,m.CoefficientNames)),"pv.zscore should list the names of coefficients in the model");
 %% Extract the data from the full model,
 T = m.Variables(~m.ObservationInfo.Excluded,m.VariableInfo.InModel | ismember(m.VariableNames,m.Formula.ResponseName));
 dummyVarCoding = lm.dummyVarCoding(m);
 % Determine which variable represents the grouping (e.g. subject)
 if pv.groupingVariable ==""
-    % Use all 
+    % Use all
     pv.groupingVariable = string(m.Formula.GroupingVariableNames{:});
-end   
+end
 groupLevels = unique(T(:,pv.groupingVariable),"rows");
 formula = m.Formula.char;
 
 %% Createa the output tables and add the results for the full sample
 feNames = m.Coefficients.Name;
-if pv.coefficients == ""
-    pv.coefficients = string(feNames(2:end));
-end
-keepCoeffs = ismember(feNames,pv.coefficients);
 fe = m.fixedEffects;
-fe = fe(keepCoeffs);
-feNames =feNames(keepCoeffs);
 effectsTable = table(fe,'RowNames',feNames,'VariableNames',{'Group'});
 ci = [m.Coefficients.Lower m.Coefficients.Upper];
-ciTable  = table(ci(keepCoeffs,:),'RowNames',feNames,'VariableNames',{'Group'});
-pTable  = table(m.Coefficients.pValue(keepCoeffs,:),'RowNames',feNames,'VariableNames',{'Group'});
+ciTable  = table(ci,'RowNames',feNames,'VariableNames',{'Group'});
+pTable  = table(m.Coefficients.pValue,'RowNames',feNames,'VariableNames',{'Group'});
 
 %% Now fit each group level separately and add to the tables
 nrGroupLevels = height(groupLevels);
@@ -58,11 +52,16 @@ if nargout>3
     models= cell(1,nrGroupLevels);
 end
 groupNames= convertvars(groupLevels,@(x)(~isstring(x)),'string');
+if width(groupNames)>1
+    groupNames= join(groupNames{:,:},"/"); % Join columns as string array
+else
+    groupNames = groupNames{:,1}; % Extract as string array
+end
 for grpCntr=1:nrGroupLevels    
     try
-        % Extract the relevant subset of data for this subjects             
-        thisT = innerjoin(T,groupLevels(grpCntr,:));
-        thisGroupName =strjoin(groupNames{grpCntr,:},'/');
+        thisGroupName = groupNames(grpCntr);
+        % Extract the relevant subset of data for this subjects
+        thisT = innerjoin(T,groupLevels(grpCntr,:));        
         if pv.zscore ~=""
             for factor = pv.zscore
                 thisT.(factor) = zscore(thisT.(factor));
@@ -81,28 +80,35 @@ for grpCntr=1:nrGroupLevels
                 error(msg);
             end
         end
-        if nargout>3
-            models{grpCntr} = thisGlm; 
-        end
-        % Store in the output tables
+
         fe = thisGlm.fixedEffects;
-        fe = fe(keepCoeffs);
-        thisFeNames = thisGlm.Coefficients.Name;
-        thisFeNames = thisFeNames(keepCoeffs);
-        effectsTable = [effectsTable   table(fe,'VariableNames',thisGroupName)]; %#ok<AGROW>
+        thisFeNames = thisGlm.CoefficientNames;     
+        % Make sure Fe are placed in the correct row of the effects table.
+        [tf,order] =ismember(thisFeNames,feNames);
+        assert(all(tf),'Missing FE in the per-level fit for %s.',thisGroupName);
+        effectsTable = [effectsTable   table(fe(order),'VariableNames',thisGroupName)]; %#ok<AGROW>               
         ci = [thisGlm.Coefficients.Lower thisGlm.Coefficients.Upper];
-        ciTable  = [ciTable table(ci(keepCoeffs,:),'VariableNames',thisGroupName)];%#ok<AGROW>
-        pTable = [pTable table(thisGlm.Coefficients.pValue(keepCoeffs),'VariableNames',thisGroupName)]; %#ok<AGROW>
-        %Sanity check that the order of FE is the same in the per subject and
-        %group model. This can fail if one of the group levels (subjects) does not
-        % have a complete set of conditions
-        assert(all(strcmpi(feNames,thisFeNames)),'coefficientNames of individual fit NOT matched with group fit! (check ''dummyVarCoding'' settings)');
+        ciTable  = [ciTable table(ci(order,:),'VariableNames',thisGroupName)];%#ok<AGROW>
+        pTable = [pTable table(thisGlm.Coefficients.pValue,'VariableNames',thisGroupName)]; %#ok<AGROW>        
     catch me
-        fprintf('perSubject lmm for group %s failed (%s) - %s\n',thisGroupName,me.message,formula)        
+        fprintf('perSubject lmm for group %s failed (%s) - %s\n',thisGroupName,me.message,formula)
         continue
     end
 end
 
+%%
+if pv.coefficients == ""
+    % All except intercept
+    pv.coefficients = string(feNames(2:end));
+elseif pv.coefficients == "*"
+    % Include intercept
+    pv.coefficients = string(feNames);
+end
+keepCoeffs = ismember(effectsTable.Properties.RowNames,pv.coefficients);
+effectsTable =effectsTable(keepCoeffs,:);
+ciTable = ciTable(keepCoeffs,:);
+pTable =pTable(keepCoeffs,:);
+feNames= feNames(keepCoeffs);
 %% Visualize the main group and individual results
 if pv.showHistogram || pv.showLine
     clf;
@@ -145,7 +151,7 @@ if pv.showHistogram || pv.showLine
             set(gca,'yTickLabels',{})
             if e==1 && ischar(groupLevels) || isstring(groupLevels)
                 ylabel(thisGroupName + "#")
-                set(gca,'yTick',1:nrGroups,'ytickLabel',groupLevels)
+                set(gca,'yTick',1:nrGroups,'ytickLabel',groupNames)
             end
             if ~pv.showHistogram
                 title(titleStr,'Interpreter','None');
