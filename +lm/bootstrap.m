@@ -100,10 +100,6 @@ p.addParameter('graph',false,@islogical); % Show graphs
 p.addParameter('nrHeteroBins',1);
 p.parse(m,varargin{:});
 
-% if any(m.ObservationInfo.Excluded)
-%     error('This model has excluded some observations by using the ''Exclude'' argument to fitglme/fitlme. Please remove the data from the data table instead, then call fit without ''Exclude'' and then pass to this function');
-% end
-
 % Create local variables to reduce parfor broadcasting
 nrHeteroBins      = p.Results.nrHeteroBins;
 mode            = p.Results.mode;
@@ -111,6 +107,7 @@ nrMonteCarlo    = p.Results.nrMonteCarlo;
 nrWorkers       = p.Results.nrWorkers;
 subjectVariable = p.Results.subjectVariable;
 T               = m.Variables;
+% These are only needed in RESAMPLE mode
 subjects        = T.(subjectVariable);
 uSubjects       = unique(subjects);
 nrSubjects      = numel(uSubjects);
@@ -148,7 +145,7 @@ if strcmpi(mode,'FITPLUSNOISE')
     % Kernel density estimate per bin
     noiseDistribution  = fitdist(m.residuals,'kernel','kernel','epanechnikov','By',responseGroupingIx);    
 else
-    % Not usedm but need to be defined for parfor
+    % Not used but need to be defined for parfor
     responseGroupingIx=[];
     noiseDistribution  =[] ; 
     response =[];
