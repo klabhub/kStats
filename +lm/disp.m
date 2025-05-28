@@ -20,8 +20,11 @@ function out = disp(m,factors,showEffects,tol,floatFmt)
 %
 % BK - Feb 2020
 
+anovaTable = anova(m,'dfmethod','satterthwaite');
+[~,~,feTable] = fixedEffects(m,'dfmethod','satterthwaite');
+
 if nargin<2 || isempty(factors)
-    factors =m.anova.Term(2:end);
+    factors =anovaTable.Term(2:end);
 end
 if nargin <3
     showEffects = 'raw';
@@ -41,7 +44,7 @@ end
 
 if ischar(factors)
     if strcmpi(factors,'*')
-        factors =m.anova.Term; % All including the intercept
+        factors =anovaTable.Term; % All including the intercept
     else
         factors = {factors};
     end
@@ -58,17 +61,17 @@ end
 
 for f=1:numel(factors)
     factor = factors{f};
-    stay = strcmpi(m.anova.Term,factor);
+    stay = strcmpi(anovaTable.Term,factor);
     
     fmt = ['\t %s: F(%d,%d)= ' floatFmt ', p=' floatFmt ','];
-    vars = {factor,m.anova.DF1(stay,1),m.anova.DF2(stay,1),m.anova.FStat(stay,1),m.anova.pValue(stay,1)};
+    vars = {factor,anovaTable.DF1(stay,1),anovaTable.DF2(stay,1),anovaTable.FStat(stay,1),anovaTable.pValue(stay,1)};
     
     if hasEta
         fmt = [fmt eta '=' floatFmt  ' CI: [' floatFmt ',' floatFmt ']'];     %#ok<AGROW>
         vars = cat(2,vars,{partialEta(stay),partialEtaLB(stay),partialEtaUB(stay)});
     end
     
-    if m.anova.pValue(stay,1) <0.05
+    if anovaTable.pValue(stay,1) <0.05
         style = 2; % Error output stream ; red
     else
         style =1; % stdout;
@@ -76,7 +79,7 @@ for f=1:numel(factors)
 
     [scale,units] = lm.scaleFactor(m,showEffects);
     
-    fe = m.fixedEffects;
+    
     elms = strsplit(factor,':');
     nrElms =numel(elms);
     for e=1:nrElms
@@ -98,17 +101,16 @@ for f=1:numel(factors)
         end
     end
     expression  = ['^' strcat(elms{:}) '$'] ;
-    stayFe = ~cellfun(@isempty, regexp(m.CoefficientNames,expression));
+    stayFe = ~cellfun(@isempty, regexp(feTable.Name,expression));
     
     % Find the corresponding linear effect (or the largest one for
     % a multilevel categorical factor).
     
-    fe = fe(stayFe)/scale;
-    
+    fe = feTable.Estimate(stayFe)/scale;    
     [fe,ix] = max(fe,[],'ComparisonMethod','abs');
-    low = m.Coefficients.Lower(stayFe);
+    low = feTable.Lower(stayFe);
     low = low(ix)/scale;
-    up =m.Coefficients.Upper(stayFe);
+    up =feTable.Upper(stayFe);
     up = up(ix)/scale;
     vars = cat(2,vars,{fe,low,up});
     if sum(stayFe)>1
