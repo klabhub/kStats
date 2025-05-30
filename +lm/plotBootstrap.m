@@ -1,19 +1,20 @@
 function plotBootstrap(results)
 % Plot the results of a bootstrap analysis.
-% The Input struct is the output of the lm.bootstrap function.
+% 
+% The input struct is the output of the lm.bootstrap function.
+% See Also lm.bootstrap
 arguments
     results (1,1) struct
 end
-
-
-
 
 FE = results.m.fixedEffects;
 nrFixedEffects =numel(FE);
 clf;
 layout=  tiledlayout("flow");
+
+% Show a histogram for the estimates of each fixed effect, with 
+% a thick line representing the original model estimate.
 for f=1:nrFixedEffects
-    % Show a histogram for each fe
     ax(f) = nexttile;
     histogram(results.fe.all(f,:),'Normalization','probability');
     hold on
@@ -32,6 +33,7 @@ for f=1:nrFixedEffects
     legend(legStr)
 end
 
+% Show the log likelihood distrivution
 ax(nrFixedEffects+1) = nexttile;ax(nrFixedEffects+1);
 histogram(results.ll,'Normalization','probability')
 hold on
@@ -40,6 +42,7 @@ title (sprintf('%s: %.3G CI [%.3G %.3G]','Log Likelihood:',mean(results.ll,"omit
 xlabel 'Log Likehood'
 ylabel 'Probability'
 
+% Show a panel with the residuals and the estimated distributions
 if ismember(results.pv.mode,["TYPE-I" "TYPE-II"])
     % Show the residuals and how they are fit by the kernel density
     ax(nrFixedEffects+2) =nexttile;
@@ -66,6 +69,8 @@ if ismember(results.pv.mode,["TYPE-I" "TYPE-II"])
     ylabel 'Probability'
     legend('Residuals','Kernel Density Estimate')
 end
+
+% Generate a title as a summary
 switch (results.pv.mode)
     case 'TYPE-I'
         % Show type-I error probability per fixed effect

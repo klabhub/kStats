@@ -138,6 +138,8 @@ arguments
     pv.alpha (1,1) double = 0.05 % Significance level
     pv.graph (1,1) logical = false % Show graphs
     pv.nrHeteroBins (1,1) double {mustBeInteger,mustBePositive} = 1  % Model heteroscedasticity with thus number of bins
+    pv.kernel (1,1) string = "epanechnikov"
+    pv.distribution (1,1) string = "kernel"
     pv.exclude (1,1) function_handle = @(x)([]); % Function that takes the data table as input and returns which rows should be excluded.
     pv.null (1,:) string ="";% For the TYPE-I mode; the names of the fixed effects that should be investigated (Defaults to all with "")
 end
@@ -200,7 +202,11 @@ switch pv.mode
         % Associate response with the bin
         [~,~,responseGroupingIx]  = histcounts(modelResponse,bins);
         % Kernel density estimate per bin
-        noiseDistribution  = fitdist(residual,'kernel','kernel','epanechnikov','By',responseGroupingIx);
+        if pv.distribution =="kernel"
+            noiseDistribution  = fitdist(residual,'kernel','kernel',pv.kernel,'By',responseGroupingIx);
+        else
+            noiseDistribution  = fitdist(residual, pv.distribution,'By',responseGroupingIx);
+        end
         uHeteroBins = unique(responseGroupingIx);
         nrUHeteroBins = numel(uHeteroBins);
     case "RESAMPLE"
@@ -215,7 +221,7 @@ nrSubjects      = size(uSubjects,1);
 dummyVarCoding = lm.dummyVarCoding(m);
 
 parfor (i=1:pv.nrMonteCarlo ,pv.nrWorkers )
-    % for i=1:pv.nrMonteCarlo % Use this when debugging
+% for i=1:pv.nrMonteCarlo % Use this when debugging
     switch pv.mode
         case "RESAMPLE"
             % Select random subset of subjects with resampling and same total
