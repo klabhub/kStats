@@ -1,4 +1,4 @@
-function [feResults,reResults,loglike] = bootstrap(m,pv)
+function [results] = bootstrap(m,pv)
 % For most datasets, the residuals of a linear mixed model are unlikely to
 % be normally distributed. This means the assumptions of the LME are
 % violated. In practice, however, this does not affect the fixed effect
@@ -78,7 +78,8 @@ function [feResults,reResults,loglike] = bootstrap(m,pv)
 % m - The  (generalized) linear mixed model
 % 'subjectVariable' - Specify which variable should be resampled. ['subject']
 % 'nrMonteCarlo' - Number of sets to simulate [100]
-% 'nrWorkers' - How many parallel workers to use [0]
+% 'nrWorkers' - How many parallel workers to use [1]. Note that for large LME the 
+% computations require a  lot of memory per worker.
 % 'graph' - Show an graphical output [false]
 % 'mode' - 'RESAMPLE', 'TYPE-II', 'TYPE-I'
 % 'alpha' - Significance level for confidence intervals [0.05]
@@ -101,7 +102,11 @@ function [feResults,reResults,loglike] = bootstrap(m,pv)
 %           values.
 %
 % OUTPUT
-% fe  - Struct with
+% The output is a single struct with all model results. This struct can be
+% passed to plotBootstrap to generate a graphical summary.
+% 
+% results.m  = Original model
+% results.fe  - Struct with
 %           .mean - mean of bootstrap sets
 %           .std - standard deviation of bootstrap sets
 %           .ci  - confidence intervals based on the bootstrap sets.
@@ -118,17 +123,17 @@ function [feResults,reResults,loglike] = bootstrap(m,pv)
 %           does not agree (suggesting that the non-normality of the noise
 %           affects the estimate too much).
 %
-% randomEffects - Struct with mean, stdev, and confidence interval for the
+% results.re - Struct with mean, stdev, and confidence interval for the
 %                   random effects. The .all field contains the full bootstrap set.
 %
-% loglike  - The log likelihood for each boostrap set.
+% results.ll - The log likelihood for each boostrap set.
 % BK -  Nov 2022.
 
 arguments
     m (1,1)   % The original LME
     pv.subjectVariable (1,:) string  = "subject" % Indicate which (grouping) variable should be used for resampling
     pv.nrMonteCarlo (1,1) double  = 100 % Number simulated datasets.
-    pv.nrWorkers (1,1) double = 0  % Number of parallel workers (parfor)
+    pv.nrWorkers (1,1) double = 1  % Number of parallel workers (parfor)
     pv.mode (1,1) string {mustBeMember(pv.mode,["RESAMPLE","TYPE-I","TYPE-II"])}= "RESAMPLE"  % Mode
     pv.alpha (1,1) double = 0.05 % Significance level
     pv.graph (1,1) logical = false % Show graphs
@@ -263,119 +268,60 @@ parfor (i=1:pv.nrMonteCarlo ,pv.nrWorkers )
 end
 close(hWaithBar);
 
-%% Summarize.
+%% Summarize and collect results in a single struct
+% Original model results
+results.m = m;
+results.pv = pv;
 
+results.uHeteroBins = uHeteroBins;
+results.responseGroupingIx = responseGroupingIx;
+results.noiseDistribution  = noiseDistribution;
 % Results most relevant for the RESAMPLE mode:
-feResults.mean = mean(allFixedEffects,2);
-feResults.std = std(allFixedEffects,0,2);
-feResults.ci   = [prctile(allFixedEffects',100*pv.alpha/2);prctile(allFixedEffects',100*(1-pv.alpha/2))]';
-feResults.all = allFixedEffects;
-feResults.mismatch = (feResults.mean-m.fixedEffects)./m.fixedEffects;
+results.fe.mean = mean(allFixedEffects,2);
+results.fe.std = std(allFixedEffects,0,2);
+results.fe.ci   = [prctile(allFixedEffects',100*pv.alpha/2);prctile(allFixedEffects',100*(1-pv.alpha/2))]';
+results.fe.all = allFixedEffects;
+results.fe.mismatch = (results.fe.mean-m.fixedEffects)./m.fixedEffects;
 
 % Results for the Type-II mode:
 if pv.mode == "TYPE-II"
     % Calculate the fraction of sets with non-significant effects.
     % Put a nan for FE that were not significant in the original model
     isSignificant = m.Coefficients.pValue < pv.alpha;
-    feResults.pTypeII = nan(nrFixedEffects,1);
-    feResults.pTypeII(isSignificant) = mean(~fixedEffectsIsSignificant(isSignificant,:),2);
+    results.fe.pTypeII = nan(nrFixedEffects,1);
+    results.fe.pTypeII(isSignificant) = mean(~fixedEffectsIsSignificant(isSignificant,:),2);
     % And the fraction in which the FE flips sign (and is significant).
-    feResults.pFlip = nan(nrFixedEffects,1);
-    isFlip = (sign(feResults.all).*repmat(sign(m.fixedEffects),[1 pv.nrMonteCarlo])) <0 & fixedEffectsIsSignificant;
-    feResults.pFlip(isSignificant) = mean(isFlip(isSignificant),2);
+    results.fe.pFlip = nan(nrFixedEffects,1);
+    isFlip = (sign(results.fe.all).*repmat(sign(m.fixedEffects),[1 pv.nrMonteCarlo])) <0 & fixedEffectsIsSignificant;
+    results.fe.pFlip(isSignificant) = mean(isFlip(isSignificant),2);
 else
     % Not meaningful
-    feResults.pTypeII = [];
-    feResults.pFlip= [];
+    results.fe.pTypeII = [];
+    results.fe.pFlip= [];
 end
 
 % Results for the Type-I mode:
 % Put a NaN if that FE was not set to zero in the null model
 if pv.mode == "TYPE-I"
     keepFe = simulatedFe==0;
-    feResults.pTypeI = nan(nrFixedEffects,1);
-    feResults.pTypeI(keepFe) = mean(fixedEffectsIsSignificant(keepFe,:),2);
+    results.fe.simulated  = simulatedFe;
+    results.fe.pTypeI = nan(nrFixedEffects,1);
+    results.fe.pTypeI(keepFe) = mean(fixedEffectsIsSignificant(keepFe,:),2);
 else
-    feResults.pTypeI = [];
+    results.fe.pTypeI = [];
+    results.fe.simulated =[];
 end
 % Random effects
-reResults.mean = mean(allRandomEffects,2);
-reResults.std = std(allRandomEffects,0,2);
-reResults.ci   = [prctile(allRandomEffects',100*pv.alpha/2);prctile(allRandomEffects',100*(1-pv.alpha/2))]';
-reResults.all = allRandomEffects;
+results.re.mean = mean(allRandomEffects,2);
+results.re.std = std(allRandomEffects,0,2);
+results.re.ci   = [prctile(allRandomEffects',100*pv.alpha/2);prctile(allRandomEffects',100*(1-pv.alpha/2))]';
+results.re.all = allRandomEffects;
+
+results.ll = loglike;
 
 %% Graphical output
-% Plot a histogram of each of the fixed effects plus the log likelihood
-
 if pv.graph
-    FE = m.fixedEffects;
-    clf;
-    layout=  tiledlayout("flow");
-    for f=1:nrFixedEffects
-        % Show a histogram for each fe
-        ax(f) = nexttile;
-        histogram(allFixedEffects(f,:),'Normalization','probability');
-        hold on
-        plot(FE(f)*[1 1],ylim,'k','LineWidth',2);
-        legStr = ["Simulated Sets" "Orignal FE"];
-        if pv.mode =="TYPE-I"
-            plot(simulatedFe(f)*[1 1],ylim,'r','LineWidth',2);
-            legStr = [legStr "Null FE"];            %#ok<AGROW>
-        end
-
-        plot([0 0],ylim,'k','LineWidth',0.5)
-        title (sprintf('%s: %.3G CI [%.3G %.3G]',m.CoefficientNames{f},feResults.mean(f),feResults.ci(f,1),feResults.ci(f,2)) ,"Interpreter","none");
-        xlabel 'Coefficient'
-        ylabel 'Probability'
-        xlim(max(abs(xlim))*[-1 1])
-        legend(legStr)
-    end
-
-    ax(nrFixedEffects+1) = nexttile;ax(nrFixedEffects+1);
-    histogram(loglike,'Normalization','probability')
-    hold on
-    plot(m.ModelCriterion.LogLikelihood*[1 1],ylim,'k','LineWidth',2);
-    title (sprintf('%s: %.3G CI [%.3G %.3G]','Log Likelihood:',mean(loglike,"omitnan"),prctile(loglike,2.5),prctile(loglike,97.5)) ,"Interpreter","none");
-    xlabel 'Log Likehood'
-    ylabel 'Probability'
-
-    if ismember(pv.mode,["TYPE-I" "TYPE-II"])
-        % Show the residuals and how they are fit by the kernel density
-        ax(nrFixedEffects+2) =nexttile;
-        maxResidual = prctile(abs(m.residuals),97.5);
-        nrBins = round(numel(m.residuals)/10);
-        x= linspace(-maxResidual,maxResidual,nrBins);
-        hold on
-        R= m.residuals;
-        % Match histogram and density colors. Histogram handle does not
-        % conatin the color that was used (only 'auto')
-        axColors = ax(nrFixedEffects+2).ColorOrder;
-        nrColors = size(axColors,1);
-        for b=1:nrUHeteroBins
-            thisGroup = responseGroupingIx==uHeteroBins(b);
-            h = histogram(R(thisGroup),x,'Normalization','Probability');
-            thisColor = axColors(mod(b-1,nrColors)+1,:);
-            h.FaceColor = thisColor;
-            thisPdf =pdf(noiseDistribution{b},x);
-            plot(x,thisPdf./sum(thisPdf),'LineWidth',2,'color',thisColor)
-        end
-        xlim(maxResidual*[-1 1])
-        xlabel 'Residual'
-        ylabel 'Probability'
-        legend('Residuals','Kernel Density Estimate')
-    end
-    switch (pv.mode)
-        case 'TYPE-I'
-            % Show type-I error probability per fixed effect
-            str = strjoin(string(m.CoefficientNames)' + ": p=" + string(feResults.pTypeI),' ');
-        case 'TYPE-II'
-            % Show type-II  error probability per fixed effect
-            str = strjoin(string(m.CoefficientNames)' + ": p=" + string(feResults.pTypeII),' ');
-        case 'RESAMPLE'
-            % Show stdev across samples as a percentage of the mean fixed effect
-            str = strjoin(string(m.CoefficientNames)' + ": std =" + string(round(100*feResults.std./abs(feResults.mean))) + "%",' ');
-    end
-    title(layout,[pv.mode + " analysis" ; str],'Interpreter','none')
+    lm.plotBootstrap(results)
 end
 
 end
