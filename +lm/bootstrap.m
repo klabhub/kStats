@@ -38,7 +38,7 @@ function [feResults,reResults,loglike] = bootstrap(m,pv)
 %  model are the true parameters and generate datasets based on these parameters.
 %
 % For either mode (Type-I or Type-II), we model the distribution of the
-% residuals of the original model (m) using a non-parametric, epachnikov kernel density
+% residuals of the original model (m) using a non-parametric, Epanechnikov kernel density
 % method (see 'kernel' option in fitdist).  This esatimation can be done
 % once for all response values (i.e. assuming homoscedasticity).
 % By specifying a number larger than 1 for the 'nrHeteroBins' parameter, this function will divide the
