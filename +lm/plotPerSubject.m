@@ -163,7 +163,7 @@ if pv.showHistogram || pv.showLine
             end
             ylim([0 nrGroups]);
             set(gca,'yTickLabels',{})
-            if e==1
+            if e==1 && ischar(groupLevels) || isstring(groupLevels)
                 ylabel(thisGroupName + "#")
                 set(gca,'yTick',1:nrGroups,'ytickLabel',groupNames)
             end

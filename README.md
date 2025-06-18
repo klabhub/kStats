@@ -5,7 +5,7 @@ Note that we have a different toolbox for Bayes Factor analysis (https://github.
 
 If you use these tools in your work, please cite [![DOI](https://zenodo.org/badge/855218886.svg)](https://zenodo.org/doi/10.5281/zenodo.13744649)
 
-Bart Krekelberg -  Sept 2024.
+Bart Krekelberg.
 
 The ***kStats*** toolbox consists of the following packages/namespaces:
 
