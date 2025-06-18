@@ -2,7 +2,7 @@ function [effectsTable,ciTable,pTable,models] = plotPerSubject(m,pv)
 % For a linear model based on one or more groups (e.g., subjects), refit the model
 % per level of the group (i.e., per subject) and show the results for a subset of model coefficients
 % to get an idea of  variability across the different levels.
-%
+% 
 % INPUT
 % glm -  a (generalized) linear mixed model
 %
@@ -23,7 +23,7 @@ arguments
     pv.showGroup (1,1) logical = true       % Add the group level result as a red line
     pv.NUMPRECISION (1,1) double {mustBeInteger,mustBeNonnegative} =3; % num2str for coefficients
     pv.alpha (1,1) double = 0.05;
-    pv.groupingVariable (1,:) string = ""  % The name of the variable that defines the grouping. Defaults to all grouping variables.    
+    pv.groupingVariable (1,:) string = ""  % The name of the variable that defines the grouping. Defaults to all grouping variables.
 end
 assert(all(pv.coefficients=="") || all(pv.coefficients=="*") || all(ismember(pv.coefficients,m.Coefficients.Name)),"pv.coefficients should list the names of coefficients in the model");
 assert(all(pv.zscore =="") || all(ismember(pv.zscore,m.CoefficientNames)),"pv.zscore should list the names of coefficients in the model");
@@ -57,39 +57,43 @@ if width(groupNames)>1
 else
     groupNames = groupNames{:,1}; % Extract as string array
 end
-for grpCntr=1:nrGroupLevels    
+for grpCntr=1:nrGroupLevels
     try
         thisGroupName = groupNames(grpCntr);
         % Extract the relevant subset of data for this subjects
-        thisT = innerjoin(T,groupLevels(grpCntr,:));        
+        thisT = innerjoin(T,groupLevels(grpCntr,:));
         if pv.zscore ~=""
             for factor = pv.zscore
                 thisT.(factor) = zscore(thisT.(factor));
             end
         end
         % Refit for this subject
+        lastwarn('')
         if isa(m,'LinearMixedModel')
             thisGlm = fitlme(thisT,formula,'FitMethod',m.FitMethod,'DummyVarCoding',dummyVarCoding) ;
         else
-            lastwarn('')
             thisGlm = fitglme(thisT,formula,'FitMethod',m.FitMethod,'Distribution',...
-                m.Distribution,'Link',m.Link,'DummyVarCoding',dummyVarCoding) ;
-            [msg,id] = lastwarn;
-            if strcmpi(id,'stats:classreg:regr:lmeutils:StandardGeneralizedLinearMixedModel:Message_PLUnableToConverge')
-                lastwarn('')
-                error(msg);
-            end
+                m.Distribution,'Link',m.Link,'DummyVarCoding',dummyVarCoding) ;            
         end
-
+    
         fe = thisGlm.fixedEffects;
-        thisFeNames = thisGlm.CoefficientNames;     
+        ci = [thisGlm.Coefficients.Lower thisGlm.Coefficients.Upper];
+        thisP =  table(thisGlm.Coefficients.pValue,'VariableNames',thisGroupName);
+        % Check to see if the estimation converged - replace results with
+        % nan if failed.
+        [~,id] = lastwarn;            
+        if ~isempty(id)            
+            fe = nan(size(fe));   
+            ci = nan(size(ci));
+            [thisP{:,:}] =deal(NaN);
+        end
+        thisFeNames = thisGlm.CoefficientNames;
         % Make sure Fe are placed in the correct row of the effects table.
         [tf,order] =ismember(thisFeNames,feNames);
         assert(all(tf),'Missing FE in the per-level fit for %s.',thisGroupName);
-        effectsTable = [effectsTable   table(fe(order),'VariableNames',thisGroupName)]; %#ok<AGROW>               
-        ci = [thisGlm.Coefficients.Lower thisGlm.Coefficients.Upper];
+        effectsTable = [effectsTable   table(fe(order),'VariableNames',thisGroupName)]; %#ok<AGROW>        
         ciTable  = [ciTable table(ci(order,:),'VariableNames',thisGroupName)];%#ok<AGROW>
-        pTable = [pTable table(thisGlm.Coefficients.pValue,'VariableNames',thisGroupName)]; %#ok<AGROW>        
+        pTable = [pTable thisP]; %#ok<AGROW>
     catch me
         fprintf('perSubject lmm for group %s failed (%s) - %s\n',thisGroupName,me.message,formula)
         continue
@@ -137,15 +141,25 @@ if pv.showHistogram || pv.showLine
         if pv.showLine
             h2= subplot(nrRows,nrCols,e+nrCols*pv.showHistogram);
             % Bottom row shows line plots with CI per group level (subject)
-            line(reshape(ciTable{e,2:end},[2 nrGroups]),repmat(1:nrGroups,[2 1]),'Color','k')
+            x = reshape(ciTable{e,2:end},[2 nrGroups]);
+            % Deal with outliers (poorly converged estimations) by scaling
+            % the graph to not-outliers and then plotting the outlier CI on
+            % top with a different color.
+            isout = any(isoutlier(x,2));            
+            line(x(:,~isout),repmat(find(~isout),[2 1]),'Color','k')            
             hold on
+            xl =xlim;
+            if any(isout)
+                line(x(:,isout),repmat(find(isout),[2 1]),'Color','m')                        
+                xlim(xl);
+            end
             plot(effectsTable{e,2:end},1:nrGroups,'k.')
             line([0 0],[0 nrGroups])
             if pv.showGroup
-            % Show the group effect as a red line in the middle
-            y = nrGroups/2 + mod(nrGroups+1,2)/2;
-            plot(effectsTable{e,1},y,'r*')
-            line(ciTable{e,1},y*[1 1],'Color','r','LineWidth',2);
+                % Show the group effect as a red line in the middle
+                y = nrGroups/2 + mod(nrGroups+1,2)/2;
+                plot(effectsTable{e,1},y,'r*')
+                line(ciTable{e,1},y*[1 1],'Color','r','LineWidth',2);
             end
             ylim([0 nrGroups]);
             set(gca,'yTickLabels',{})

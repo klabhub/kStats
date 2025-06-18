@@ -1,4 +1,4 @@
-function plotMarginal(m,base,effects,cumulative)
+function plotMarginal(m,base,effects,cumulative,pv)
 % Plot marginal effects for a (generalized) linear model, using a bar graph
 % with error bars, and expressing all effects relative to a specified
 % baseline.
@@ -20,6 +20,7 @@ arguments
     base (1,:) char = '(Intercept)'
     effects (1,:) cell = {}
     cumulative (1,1) logical = true
+    pv.unlink = []
 end
 coeffs = m.Coefficients;
 if isempty(effects)
@@ -32,10 +33,14 @@ pos= NaN(nrFe,1);
 
 allFeNames = m.CoefficientNames; %regexprep(lm.CoefficientNames,'_(?<level>[\w\d]+)\>','');
 
-if isa(m,'GeneralizedLinearMixedModel')
-    unlink  =m.Link.Inverse;
+if isempty(pv.unlink)
+    if isa(m,'GeneralizedLinearMixedModel')
+        unlink  =m.Link.Inverse;
+    else
+        unlink = @(x)(x);
+    end
 else
-    unlink = @(x)(x);
+    unlink = pv.unlink;
 end
 ix = ismember(allFeNames,base);
 trueBaseBeta = sum(coeffs.Estimate(ix));
