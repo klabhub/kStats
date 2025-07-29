@@ -2,7 +2,9 @@ function out = disp(m,factors,showEffects,tol,floatFmt)
 % Convenience disp function to show Anova and Fixed Effect results of a 
 % linear model in standard notation for easy copy and paste.
 %
-% The anova and fixed effects dof are computed using the Satterthwaite method.
+% The anova and fixed effects dof are computed using the Satterthwaite
+% method for linear mixed effects models, but residual df for generalized
+% linear mixed effects models.
 % 
 % INPUT
 %  m =  a linear model
@@ -23,8 +25,15 @@ function out = disp(m,factors,showEffects,tol,floatFmt)
 % BK - Feb 2020
 
 % Get the tables from the LM
-anovaTable      = anova(m,'dfmethod','satterthwaite');
-[~,~,feTable]   = fixedEffects(m,'dfmethod','satterthwaite');
+if isa(m,'LinearMixedModel')
+    dfMethod = 'satterthwaite';
+elseif isa(m,'GeneralizedLinearMixedModel')
+    dfMethod = 'residual';
+else
+    dfMethod  = 'residual';
+end
+anovaTable      = anova(m,'dfmethod',dfMethod);
+[~,~,feTable]   = fixedEffects(m,'dfmethod',dfMethod);
 
 if nargin<2 || isempty(factors)
     factors =anovaTable.Term(2:end);
