@@ -216,29 +216,24 @@ switch pv.mode
         subjects        = originalDataTable(:,pv.subjectVariable);
     otherwise
 end
-uSubjects       = unique(subjects,"rows");
+[uSubjects,~,subjectIx]       = unique(subjects,"rows");
 nrSubjects      = size(uSubjects,1);
 dummyVarCoding = lm.dummyVarCoding(m);
-
-parfor (i=1:pv.nrMonteCarlo ,pv.nrWorkers )
-% for i=1:pv.nrMonteCarlo % Use this when debugging
+formula = string(char(m.Formula));
+%parfor (i=1:pv.nrMonteCarlo ,pv.nrWorkers )
+ for i=1:pv.nrMonteCarlo % Use this when debugging
     switch pv.mode
         case "RESAMPLE"
             % Select random subset of subjects with resampling and same total
             % number.
-            subjectsToUse = uSubjects{randi(nrSubjects,[nrSubjects 1]),:};
-            subjectsSoFar = 0;
-            % Now create a new data table from the data for this subject, but
-            % assign a new ID to each of the resampled subjects
-            setT = table;
-            for sub = subjectsToUse'
-                subjectsSoFar = subjectsSoFar +1; % Used to generate new IDs
-                keep = ismember(subjects{:,:},sub);
-                resampledSubject= originalDataTable(keep,:);
-                % Assign a new ID to each subject
-                resampledSubject.(pv.subjectVariable) = repmat(categorical(subjectsSoFar),[sum(keep) 1]);
-                setT = [setT; resampledSubject]; %#ok<AGROW>
-            end
+            subjectIxToUse = randi(nrSubjects,[nrSubjects 1]);
+            [keep,locb] = ismember(subjectIx,subjectIxToUse);
+            newSubjectId = 1:nrSubjects;
+            newSubjectId = newSubjectId(locb(keep))';
+            setT = originalDataTable(keep,:);
+            setT = addvars(setT,newSubjectId);
+            formula = string(char(m.Formula.FELinearFormula));
+            formula = formula + " +(1|newSubjectId)";           
         case {"TYPE-I","TYPE-II"}
             % For each set, simulate the response as the (linear) prediction of the
             % estimate plus noise based on the kernel estimate of the
@@ -259,9 +254,9 @@ parfor (i=1:pv.nrMonteCarlo ,pv.nrWorkers )
     exclude = pv.exclude(setT);
     % Estimate model parameters based on the current set.
     if isa(m,'GeneralizedLinearMixedModel')
-        thisM =fitglme(setT,char(m.Formula),'Distribution',m.Distribution,'link',m.Link,'DummyVarCoding',dummyVarCoding,'Exclude',exclude);
+        thisM =fitglme(setT,formula,'Distribution',m.Distribution,'link',m.Link,'DummyVarCoding',dummyVarCoding,'Exclude',exclude);
     else
-        thisM =fitlme(setT,char(m.Formula),'DummyVarCoding',dummyVarCoding,'Exclude',exclude);
+        thisM =fitlme(setT,formula,'DummyVarCoding',dummyVarCoding,'Exclude',exclude);
     end
 
     % Store the fixed and random effects
