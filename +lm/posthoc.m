@@ -1,30 +1,32 @@
-function [p,stat,df,delta,CI,str,c,debugStr] = posthoc(m,A,B,predictedDelta,tail,alpha,scaleMode)
+function [p,stat,df,delta,CI,str,c,debugStr] = posthoc(m,A,B,predictedDelta,tail,alpha,scaleMode,dfMethod)
 % Perform a posthoc comparison of condition A and B in a Linear Mixed Model,
-% using coefTest, but using cell arrays of parm/value pairs to specify conditions A and B
-% instead of the contrast
-%
+% using cell arrays of parm/value pairs to specify conditions A and B
 %
 % INPUT
 % lm                = The linear model
 % A                 =  Cell array specifying condition A
 % B                 = Cell array specifying condition B
 % predictedDelta    = Predicted difference between A and B. Defaults to 0.
-% tail              = Specify the tail of the distribution. 'left','right' (use one sided T-tests)
-%                       or 'both' (use F-test).
+% tail              = Specify the tail of the distribution. 'left','right' or 'both'.
 % alpha             = Significance level for the confidence interval.
 % scaleMode             = Scaling mode for the delta (RAW,INTERCEPT, RANDOMSTD;
 %                       see lm.scaleFactor)
+% dfMethod          = Method to determine the error degrees of freedom.
+%                   Defaults to 'residual', but can be set to
+%                   'satterthwaite'.  Note that 'satterthwaite' will only
+%                   work if A and B are conditions in the design (and not
+%                   an arbitrary linear combination of the fixed effects).
 %
 % OUTPUT
-% p                 = The p-value associated with the test. (see coefTest)
-% stat              =  F for two-tailed tests,  T for one sided
-% df                = Error degrees of freedom (see coefTest)
+% p                 = The p-value associated with the test.
+% stat              =  T statistic
+% df                = Error degrees of freedom for the T statistics
 % delta             = The difference.
 % ci                = The 1-alpha confidence interval
-% str                = A char that gives the full stats in a publication  ready format
-% contrast          = The contrast used for this test.
-% debugStr          = Contrast shown together with coefficient names to
-%                       help understand why the contrast is the way it is...
+% str                = A char that gives the full stats in a publication ready format
+% contrast          = The numeric contrast used for this test (derived from A and B specification)
+% debugStr          = Contrast shown together with coefficient names to help understand why the contrast is the way it is...
+%
 % EXAMPLE
 % Fit a model with two fixed-effect predictors and a random
 %             effect. Test for the significance of the Cylinders term. The
@@ -45,26 +47,18 @@ function [p,stat,df,delta,CI,str,c,debugStr] = posthoc(m,A,B,predictedDelta,tail
 %
 % BK -  Jan 2021
 % Mar 2021- rewrote to use lm.contrast
-
-
-nrContrast = size(A,1);
-
-
-
-nin =nargin;
-if nin<7
-    scaleMode = 'RAW';
-    if nin <6
-        alpha = 0.05;
-        if nin <5
-            tail = 'both';
-            if nin <4
-                predictedDelta = zeros(nrContrast,1);
-            end
-        end
-    end
+% Jul 2025- added satterthwaite dof approximation
+arguments
+    m (1,1)
+    A (1,:)
+    B (1,:)
+    predictedDelta (:,1) double  = zeros(size(A,1))
+    tail (1,1) string = "both"
+    alpha (1,1) double = 0.05
+    scaleMode (1,1) string = "RAW"
+    dfMethod (1,1) string  {mustBeMember(dfMethod,["residual","satterthwaite"])} = "residual"
 end
-
+nrContrast = size(A,1);
 if nrContrast>1
     % Recursively call this function for each row in the contrast.
     p = nan(nrContrast,1);
@@ -75,60 +69,53 @@ if nrContrast>1
     str =cell(nrContrast,1);
     debugStr =cell(nrContrast,1);
     for i=1:nrContrast
-        [p(i),stat(i),df(i),delta(i),CI(i,:),str{i},c(i,:),debugStr{i}] = lm.posthoc(m,A(i,:),B(i,:),predictedDelta(i),tail,alpha,scaleMode); %#ok<AGROW>
+        [p(i),stat(i),df(i),delta(i),CI(i,:),str{i},c(i,:),debugStr{i},df(i)] = lm.posthoc(m,A(i,:),B(i,:),predictedDelta(i),tail,alpha,scaleMode,dfMethod);
     end
     return;
 end
 
+%% Translate the two conditions A/B into a numeric contrast vector
+[c,TA,TB]  = lm.contrast(m,A,B); % the linear contrast
+assert((istable(TA) && istable(TB)) || dfMethod=="residual","Satterthwaite residuals can only be computed for conditions in the model. Use cell arrays to define the contrast. ")
+assert(~(dfMethod=="satterthwaite" && isa(m,'LinearModel')),"Satterthwaite residuals only apply to mixed effects models" )
 
-%% Determine the estimate using the linear model FE
-if isnumeric(A)
-    if nin < 3
-        B =zeros(size(A));
-    end
-    c =A-B;
-else
-    c  = lm.contrast(m,A,B); % the linear contrast
-end
-
-
+%% Estimate the value using the linear model FE
 if isa(m,'LinearModel')
     delta  =c*m.Coefficients.Estimate;
+    df = m.DFE;
 elseif isa(m,'LinearMixedModel') || isa(m,'GeneralizedLinearMixedModel')
-    delta = c*m.fixedEffects;
+    switch dfMethod
+        case 'residual'
+            delta = c*m.fixedEffects;
+            df  =  m.DFE;
+        case 'satterthwaite'
+            [a,~,dfa] = predict(m,TA,'DFMethod','satterthwaite','Conditional',false);
+            [b,~,dfb] = predict(m,TB,'DFMethod','satterthwaite','Conditional',false);
+            assert((dfa-dfb)<0.01,"Satterthwaite dof differ between conditions.")
+            delta = a-b;
+            df = dfa;
+    end
 else
     error('Unknown model type')
 end
 
-
 debugStr = strcat(m.CoefficientNames', ' : ' , cellstr(num2str(c')));
-predictedDelta = predictedDelta(:).*ones(size(delta));
-if ~all(size(delta)==size(predictedDelta))
-    error('Predicted delta [nrRows nrCols] has to match the expected delta');
-end
+assert(all(size(delta)==size(predictedDelta)),'Predicted delta [nrRows nrCols] has to match the expected delta');
 
-if size(delta,1)>1 && ~strcmpi(tail,'both')
-    error('One-sided posthoc tests are only defined for conditions, not for factors');
-end
-
-%% Assess statistical significance using F or T
+%% Assess statistical significance using T
+cov  = c*m.CoefficientCovariance*c';
+se = sqrt(cov);  % scalar standard error
+stat = (delta-predictedDelta)/se; % Scalar contrasts only.
+pLeft = tcdf(stat,df);
+pRight = 1-tcdf(stat,df);
+statName= 'T';
 switch upper(tail)
     case 'BOTH'
-        % Two-sided tests - use the built-in F test.
-        [p,stat,~,df] = coefTest(m,c,predictedDelta);
-        statName= 'F';
-    case {'LEFT','RIGHT'}
-        cov  = c*m.CoefficientCovariance*c';
-        stat = (delta-predictedDelta)/sqrtm(cov);% Use sqrtm for more stability (less speed)
-        df  =  m.DFE;
-        if strcmpi(tail,'LEFT')
-            p = tcdf(stat,m.DFE);
-        else
-            p = 1-tcdf(stat,m.DFE);
-        end
-        statName= 'T';
-    otherwise
-        error('%s is not a valid tail specification',tail);
+        p = 2*min(pLeft,pRight);
+    case 'LEFT'
+        p = pLeft;
+    case 'RIGHT'
+        p= pRight;
 end
 
 %% Scalnig
@@ -138,9 +125,8 @@ delta = delta/scale;
 %% Alpha CI
 if nargout > 4
     % Compute 1-alpha point estmate confidence intervals, only if requested .
-    cov  = c*m.CoefficientCovariance*c';
-    criterion = tinv(1-alpha/2,m.DFE);
-    updown= criterion.*sqrtm(cov)/scale; % Use sqrtm for more stability (less speed)
+    criterion = tinv(1-alpha/2,df);
+    updown= criterion.*se/scale;
     CI = [delta - updown, delta + updown];
 end
 

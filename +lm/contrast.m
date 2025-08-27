@@ -16,21 +16,23 @@ function [v,TA,TB] = contrast(m,A,B,defineDifference,scale)
 %
 % OUTPUT
 % v = The contrast correspoonding to A-B
-%
+% TA = Table representing A as a condition (if possible)
+% TB = Table representing B as a condition (if possible).
+% 
 % BK - Mar 2021
-if nargin<5
-    scale = false;
-    if nargin<4
-        defineDifference =true;
-    end
+% BK Jul 2025 - Empty B now defaults to zero and no longer includes the intercept.
+arguments
+    m (1,1)
+    A (1,:)
+    B (1,:)
+    defineDifference (1,1) logical = true
+    scale (1,1) logical  = false
 end
-assert(islogical(scale)&& islogical(defineDifference),"scale and defineDifference parameters should be logical values");
-
 import lm.*
 if isa(A,'double') && isa(B,'double')
-    % Both lready specfied as numeric contrasts
+    % Both already specfied as numeric contrasts
     v= A-B;
-    TA= table;
+    TA= table; % lm.posthoc will interpret this to mean that this is not a specific condition.
     TB =table;
     return;
 elseif isa(A,'table')
@@ -61,7 +63,6 @@ if nargin >2 && ~isempty(B)
 end
 %% With these tables we can use the builtin functions to create a "designmatrix" for A and B
 [~,varLocs] = ismember(TA.Properties.VariableNames,m.VariableNames);
-
 terms = m.Formula.FELinearFormula.Terms(:,varLocs);
 aTerms = terms;
 dvCoding = lm.dummyVarCoding(m);
@@ -77,7 +78,6 @@ end
 %% Same for B if requested.
 if nargin <3 || isempty(B)
     vB = zeros(size(vA));
-    vB(1) = 1; % Intercept only
 else
     bTerms = terms;
     [vB,~,cols2vars,cols2terms,colNames,termNames]  = classreg.regr.modelutils.designmatrix(TB,'Model',bTerms, ...
@@ -136,8 +136,8 @@ function TX= fillTable(m,propValSpecs)
                 otherwise
                     error('Non categorical, non numeric variable (%s)... not sure what to do here...',varNames{i});
             end
-        end
-        TX.(varNames{i}) =value;
+        end         
+        TX.(varNames{i}) =convert(value,varTypes{i});
     end
     
 end
