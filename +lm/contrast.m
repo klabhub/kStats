@@ -6,8 +6,7 @@ function [v,TA,TB] = contrast(m,A,B,defineDifference,scale)
 % m - The linear model
 % A - Condition A - A cell array of variable/value pairs.
 % B - Condition B - B cell array of variable/value pairs.Can be empty, in
-%       which case the function returns the vector defining A relative to
-%       the intercept only model
+%       which case the function returns the vector defining A relative to 0
 % defineDifference = When set tot true, the B cell array specifies only those
 %           variables that are different in B. [true]
 % scale -  Set this to true to scale the weights such that sum(abs(v)) ==2.
@@ -17,7 +16,8 @@ function [v,TA,TB] = contrast(m,A,B,defineDifference,scale)
 % OUTPUT
 % v = The contrast correspoonding to A-B
 % TA = Table representing A as a condition (if possible)
-% TB = Table representing B as a condition (if possible).
+% TB = Table representing B as a condition (if possible). Empty if no B
+% specified.
 % 
 % BK - Mar 2021
 % BK Jul 2025 - Empty B now defaults to zero and no longer includes the intercept.
@@ -78,6 +78,7 @@ end
 %% Same for B if requested.
 if nargin <3 || isempty(B)
     vB = zeros(size(vA));
+    TB = table(); % Return empty table to signify a value of zero for b 
 else
     bTerms = terms;
     [vB,~,cols2vars,cols2terms,colNames,termNames]  = classreg.regr.modelutils.designmatrix(TB,'Model',bTerms, ...

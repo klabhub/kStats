@@ -90,8 +90,13 @@ elseif isa(m,'LinearMixedModel') || isa(m,'GeneralizedLinearMixedModel')
             df  =  m.DFE;
         case 'satterthwaite'
             [a,~,dfa] = predict(m,TA,'DFMethod','satterthwaite','Conditional',false);
-            [b,~,dfb] = predict(m,TB,'DFMethod','satterthwaite','Conditional',false);
-            assert((dfa-dfb)<0.01,"Satterthwaite dof differ between conditions.")
+            if isempty(TB)
+                % No B was specified in lm.contrast; compare to 0
+                b = 0 ;                
+            else
+                [b,~,dfb] = predict(m,TB,'DFMethod','satterthwaite','Conditional',false);
+                 assert((dfa-dfb)<0.01,"Satterthwaite dof differ between conditions.")
+            end
             delta = a-b;
             df = dfa;
     end
