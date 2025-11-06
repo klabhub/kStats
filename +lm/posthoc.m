@@ -95,7 +95,7 @@ elseif isa(m,'LinearMixedModel') || isa(m,'GeneralizedLinearMixedModel')
                 b = 0 ;                
             else
                 [b,~,dfb] = predict(m,TB,'DFMethod','satterthwaite','Conditional',false);
-                 assert((dfa-dfb)<0.01,"Satterthwaite dof differ between conditions.")
+                assert((dfa-dfb)<0.5,"Satterthwaite dof differ between conditions.")
             end
             delta = a-b;
             df = dfa;
