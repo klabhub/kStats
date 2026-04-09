@@ -25,6 +25,13 @@ function [meta,anova] = analyze(varargin,pv)
 % analysis that includes subgroups. Use the pv.poolT2 input argument to
 % specify that the pooled T2 variance should be used (instead of the
 % subgroup T2 variance).
+%
+% synthetic : A struct specifying how to handle multiple dependent
+%             variables from the same study. Defaults to empty, which
+%             assumes that the variables are independent. 
+%           .mode = "AVERAGE"   - determines an average effect size per  study
+%           .r = 0  - Assumed pairwise correlation between variables.
+%
 % 
 % OUTPUT
 % meta.nrStudies - number of studies included in the analysis
@@ -77,6 +84,9 @@ end
 arguments
     pv.effectSize (1,1) string {mustBeMember(pv.effectSize,"hedgesg")} = "hedgesg"  % Measure of effect size to use
     pv.tail (1,1) double = 1; % Set to 2 to use a two-tailed test for p-values of the summary effect
+        
+    % 
+    pv.synthetic = struct([]);
 
     % Options for group analysis only
     pv.group   string = ""  % Vector of string identifiers associating each study with a group.
@@ -95,12 +105,11 @@ if isequal(length(varargin),7) % input is raw statistics, put them into a table
     for i = 1:length(varargin)
         T = addvars(T,varargin{1,i},'NewVariableNames', newname(i));
     end
-    assert (all(round(T.n1)==T.n1 & round(T.n2)==T.n2),"n1 and n2 should be integer (number of samples in the study)")
-    assert(isstring(T.study),"study should be a string");
 elseif isscalar(varargin)
     T = varargin{1,1};
 end
-
+assert (all(round(T.n1)==T.n1 & round(T.n2)==T.n2),"n1 and n2 should be integer (number of samples in the study)")
+assert(isstring(T.study),"study should be a string");
 %% Determine grouping 
 if ~all(pv.group=="")
     totalStudiesBefore = length(unique(T.study));
@@ -138,25 +147,46 @@ end
 for id = 1:nrGroups
     % Per group
     stay = G==grpNr(id);
-    switch upper(pv.effectSize)
-        case "HEDGESG"
-            [meta(id).effect.value,meta(id).effect.variance,meta(id).effect.n,meta(id).name] = hedgesg(T.m1(stay),T.m2(stay),T.sd1(stay),T.sd2(stay),T.n1(stay),T.n2(stay));
-    end
+    
     meta(id).ID =  ID(id);
-    meta(id) = ma.heterogeneity(meta(id));
     meta(id).nrStudies = sum(stay);
     meta(id).study = [T.study(stay)];
+    if ~ismember("sign",T.Properties.VariableNames)
+        sign = ones(height(T),1);
+    else
+        sign = T.sign;
+    end
+    switch upper(pv.effectSize)
+        case "HEDGESG"
+            [meta(id).effect.value,meta(id).effect.variance,meta(id).effect.n,meta(id).name] = hedgesg(T.m1(stay),T.m2(stay),T.sd1(stay),T.sd2(stay),T.n1(stay),T.n2(stay),sign(stay));
+    end
+    
+    
+    if ~isempty(pv.synthetic)
+            meta(id) = ma.synthetic(meta(id),pv.synthetic);   
+    end
+
+
+    meta(id) = ma.heterogeneity(meta(id));
+    
 end
 
+
+
+
 % Add effect sizes and heterogeneity for the ungrouped data as another "group"
-if nrGroups>1
+if nrGroups>1 
     % Also analyze the groups as one ( needed for anova )
     id =nrGroups+1;
     totalStudies = unique(T.study);
     meta(id).nrStudies = length(totalStudies);
-    [meta(id).effect.value,meta(id).effect.variance,meta(id).effect.n,meta(id).name] = hedgesg(T.m1,T.m2,T.sd1,T.sd2,T.n1,T.n2);
     meta(id).ID =  "All Studies";
     meta(id).study = "";
+    [meta(id).effect.value,meta(id).effect.variance,meta(id).effect.n,meta(id).name] = hedgesg(T.m1,T.m2,T.sd1,T.sd2,T.n1,T.n2,T.sign);
+    if ~isempty(pv.synthetic)
+        meta(id) = ma.synthetic(meta(id),pv.synthetic);   
+    end
+
     meta(id) = ma.heterogeneity(meta(id));
     % Determine pooled between study variance T2 (option in anova)
     qs = [meta(1:nrGroups).Q];

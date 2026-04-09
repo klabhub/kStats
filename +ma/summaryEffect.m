@@ -37,9 +37,9 @@ if tail==1
 else
     pM = 2*(1-normcdf(abs(z)));
 end
-% Prediction interval
-df = numel(meta.effect.value)-1;
-t  = tinv(0.975,df-1);
+% Prediction interval. Borenstein page 130/131
+df = numel(meta.effect.value)-2;
+t  = tinv(0.975,df);
 piM = M + [-1 1]*t*sqrt(varM+poolT2);
 
 

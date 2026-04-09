@@ -54,7 +54,7 @@ end
 % Add the summary effect as a diamond with tips showing confidence limits
 patch([meta.summary.ci(1) meta.summary.value meta.summary.ci(2) meta.summary.value], nrStudies+ [1 1+pv.maxHeight 1 1-pv.maxHeight ],'k');
 % And a line showing the prediction interval
-line([meta.summary.p(1) meta.summary.pi(2)],(nrStudies+1)*[1 1],'Color','k')
+line([meta.summary.pi(1) meta.summary.pi(2)],(nrStudies+1)*[1 1],'Color','k')
 plot([0 0],ylim,'k')
 set(gca,'YDir','reverse','YTick',1:nrStudies,'YTickLabel',pv.yTickLabel);
 xlabel(sprintf('Effect Size (%s) \n %s',meta.name,meta.ID))
