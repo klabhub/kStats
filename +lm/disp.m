@@ -62,7 +62,7 @@ if ischar(factors)
     end
 end
 
-fprintf('%s\n',m.Formula.char);
+fprintf('%s (AIC: %.0f)\n',m.Formula.char,m.ModelCriterion.AIC);
 if contains(showEffects,'PARTIALETA','IgnoreCase',true)
     [partialEta,partialEtaLB,partialEtaUB] = lm.partialEtaSquared(m,'tol',tol);
     eta = ['partial ' char(hex2dec('03B7')) char(178)];

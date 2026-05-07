@@ -15,7 +15,7 @@ if c.pValue(2)<0.05
 else
     second='';first='*';
 end
-str= sprintf('%s%s%s vs %s%s%s dAIC %d (X2 (%d) = %3.3f, p= %3.3g)\n',first,c.Model(1),first,second,c.Model(2),second,round(diff(c.AIC)),c.deltaDF(2),c.LRStat(2),c.pValue(2));
+str= sprintf('%s%s%s vs %s%s%s dAIC %d \n (X2 (%d) = %3.3f, p= %3.3g)\n',first,c.Model(1),first,second,c.Model(2),second,round(diff(c.AIC)),c.deltaDF(2),c.LRStat(2),c.pValue(2));
 if nargout ==0
     fprintf(str);
 else
