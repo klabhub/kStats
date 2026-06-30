@@ -61,8 +61,9 @@ if ischar(factors)
         factors = {factors};
     end
 end
-
-fprintf('%s (AIC: %.0f)\n',m.Formula.char,m.ModelCriterion.AIC);
+r = corr(m.response,fitted(m),'Rows','pairwise'); % Correlation between prediction and dv - allows comparison across different generalized models
+rmse = sqrt(mean((m.response-fitted(m)).^2,"omitmissing")); % Root mean squared error
+fprintf('%s \n GOF: AIC= %.0f \t  R^2= %0.2f \t r= %0.2f \t rmse = %0.3f\n',m.Formula.char,m.ModelCriterion.AIC,m.Rsquared.Adjusted,r,rmse);
 if contains(showEffects,'PARTIALETA','IgnoreCase',true)
     [partialEta,partialEtaLB,partialEtaUB] = lm.partialEtaSquared(m,'tol',tol);
     eta = ['partial ' char(hex2dec('03B7')) char(178)];
