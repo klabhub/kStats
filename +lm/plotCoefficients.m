@@ -83,6 +83,23 @@ for feIx=1:nrFe
             high(feIx) = link(coeffs.Upper(ix));
             estimate(feIx) = link(coeffs.Estimate(ix));
         end
+    elseif isEffectsCoded(m)
+        [handled,contrast,coefficientIx] = omittedEffectsTerm( ...
+            m,fe(feIx),allFeNames);
+        if handled
+            if pv.addIntercept && any(interceptIx)
+                contrast(interceptIx) = 1;
+            end
+            beta = contrast * coeffs.Estimate;
+            se = sqrt(max(0,contrast * m.CoefficientCovariance * contrast'));
+            critical = coefficientCriticalValue(coeffs,coefficientIx);
+            low(feIx) = link(beta-critical*se);
+            high(feIx) = link(beta+critical*se);
+            estimate(feIx) = link(beta);
+        else
+            error('lm:plotCoefficients:UnknownFixedEffect', ...
+                'Fixed effect %s does not exist in this model',fe(feIx));
+        end
     else
         error('lm:plotCoefficients:UnknownFixedEffect', ...
             'Fixed effect %s does not exist in this model',fe(feIx));
@@ -141,6 +158,90 @@ errorbar(x,estimate,estimate-low,high-estimate,'.','CapSize',0,'Color','k');
 ylabel([m.ResponseName ' ' units])
 set(gca,'XTick',x,'XTickLabel',xLabel,'XtickLabelRotation',45);
 
+end
+
+function tf = isEffectsCoded(m)
+tf = strcmpi(string(lm.dummyVarCoding(m)),"effects");
+end
+
+function [handled,contrast,coefficientIx] = omittedEffectsTerm( ...
+        m,requested,allFeNames)
+% Return the effects-coded contrast for an omitted level or interaction.
+handled = false;
+contrast = zeros(1,numel(allFeNames));
+coefficientIx = false(1,numel(allFeNames));
+factors = split(requested,":");
+
+inModel = m.VariableInfo.InModel;
+allVariables = string(m.VariableInfo.Properties.RowNames);
+categoricalCandidates = inModel & m.VariableInfo.IsCategorical;
+variables = allVariables(categoricalCandidates);
+ranges    = m.VariableInfo.Range(categoricalCandidates);
+represented = cell(size(factors));
+
+for factorIx = 1:numel(factors)
+    variableIx = [];
+    for candidateIx = 1:numel(variables)       
+        levels = string(ranges{candidateIx});
+        if any(variables(candidateIx) + "_" + levels == factors(factorIx))
+            variableIx = candidateIx;
+            break
+        end
+    end
+    if isempty(variableIx)
+        % Continuous predictors are represented by their variable name,
+        % rather than by variable-level coefficient names.
+        continuousIx = allVariables == factors(factorIx) & inModel & ...
+            ~m.VariableInfo.IsCategorical;
+        if ~any(continuousIx)
+            return
+        end
+        represented{factorIx} = factors(factorIx);
+    else
+        levels = string(ranges{variableIx});
+        names = variables(variableIx) + "_" + levels;
+        represented{factorIx} = names(ismember(names,allFeNames));
+    end
+end
+
+% Expand omitted factors. Effects coding assigns -1 to every represented
+% level when the requested factor is the omitted level.
+terms = "";
+weights = 1;
+for factorIx = 1:numel(factors)
+    if ismember(factors(factorIx),represented{factorIx})
+        options = factors(factorIx);
+        factorWeight = 1;
+    else
+        options = represented{factorIx};
+        factorWeight = -1;
+    end
+    nextTerms = strings(0,1);
+    nextWeights = zeros(0,1);
+    for termIx = 1:numel(terms)
+        for optionIx = 1:numel(options)
+            if terms(termIx) == ""
+                nextTerms(end+1,1) = options(optionIx); %#ok<AGROW>
+            else
+                nextTerms(end+1,1) = terms(termIx) + ":" + ...
+                    options(optionIx); %#ok<AGROW>
+            end
+            nextWeights(end+1,1) = weights(termIx) * factorWeight; %#ok<AGROW>
+        end
+    end
+    terms = nextTerms;
+    weights = nextWeights;
+end
+
+for termIx = 1:numel(terms)
+    ix = coefficientIndexForTerm(allFeNames,terms(termIx));
+    if isempty(ix)
+        return
+    end
+    contrast(ix) = contrast(ix) + weights(termIx);
+    coefficientIx(ix) = true;
+end
+handled = true;
 end
 
 function critical = coefficientCriticalValue(coeffs,ix)
