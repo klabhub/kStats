@@ -6,17 +6,15 @@ function [estimate,low,high] =plotCoefficients(m,fe,x,scale,pv)
 % INPUT
 % lm - Linear model
 % fe - Names of the fixed effects to show. 
-%           Empty (default) will show all except the intercept
-%           "*" will show all
+%           Empty (default) will show all modeled coefficients except the intercept
+%           "*" will show all (including missing levels of categorical vars)
+%           "*-1" will show all except the intercept
 % x - Horizontal axis. [1:nrFixedEffects].
 % scale - Scale the effects to
 %                      'Intercept' ; scale to the fixed intercept effect
 %                       'RANDOMSTD' : scale to the standard deviation of
 %                       the random effects.
 %                       'none' - do not scale (default)
-% 'addIntercept' - Set this to true to add the intercept to the
-%                   coefficients to show the overall effect at each level.
-%                   
 % 'sigOnly' - Set to true to show only coefficients that are significantly
 %               nonzero (based on their (non-simultaneous) confidence
 %               intervals)
@@ -31,22 +29,23 @@ arguments
     fe (1,:) string = string.empty
     x  = [] 
     scale (1,1) string = "none"
-    pv.addIntercept (1,1) logical = false
     pv.sigOnly (1,1) logical = false 
 end 
 allFeNames = string(m.CoefficientNames);
-if isscalar(fe) && fe == "*"
+if isscalar(fe) && any(fe == ["*", "*-1"])
+    includeIntercept = fe == "*";
     fe = allFeNames(:).';
+    if ~includeIntercept
+        fe = fe(fe ~= "(Intercept)");
+    end
+    if isEffectsCoded(m)
+        fe = [fe, omittedEffectsWildcardNames(m,allFeNames)];
+    end
 elseif isempty(fe)
     % Show all except intercept
     fe = setdiff(allFeNames,"(Intercept)",'stable');
 else
     % Plot explicitly requested coefficients.
-end
-if pv.addIntercept
-    % The intercept is included in each total estimate, not plotted as a
-    % separate effect.
-    fe = fe(fe ~= "(Intercept)");
 end
 nrFe = numel(fe);
 
@@ -57,8 +56,6 @@ else
 end
 
 coeffs = m.Coefficients;
-interceptIx = allFeNames == "(Intercept)";
-
 
 low = NaN(nrFe,1);
 high = NaN(nrFe,1);
@@ -66,30 +63,13 @@ estimate = NaN(nrFe,1);
 for feIx=1:nrFe
     ix = coefficientIndex(allFeNames,fe(feIx));
     if ~isempty(ix)
-        if pv.addIntercept && ~interceptIx(ix) && any(interceptIx)
-            % Add the intercept and propagate its covariance with this
-            % coefficient to obtain the total estimate for this level.
-            contrast = zeros(1,numel(allFeNames));
-            contrast(ix) = 1;
-            contrast(interceptIx) = 1;
-            beta = contrast * coeffs.Estimate;
-            se = sqrt(max(0,contrast * m.CoefficientCovariance * contrast'));
-            critical = coefficientCriticalValue(coeffs,ix);
-            low(feIx) = link(beta-critical*se);
-            high(feIx) = link(beta+critical*se);
-            estimate(feIx) = link(beta);
-        else
-            low(feIx) = link(coeffs.Lower(ix));
-            high(feIx) = link(coeffs.Upper(ix));
-            estimate(feIx) = link(coeffs.Estimate(ix));
-        end
+        low(feIx) = link(coeffs.Lower(ix));
+        high(feIx) = link(coeffs.Upper(ix));
+        estimate(feIx) = link(coeffs.Estimate(ix));
     elseif isEffectsCoded(m)
         [handled,contrast,coefficientIx] = omittedEffectsTerm( ...
             m,fe(feIx),allFeNames);
         if handled
-            if pv.addIntercept && any(interceptIx)
-                contrast(interceptIx) = 1;
-            end
             beta = contrast * coeffs.Estimate;
             se = sqrt(max(0,contrast * m.CoefficientCovariance * contrast'));
             critical = coefficientCriticalValue(coeffs,coefficientIx);
@@ -162,6 +142,74 @@ end
 
 function tf = isEffectsCoded(m)
 tf = strcmpi(string(lm.dummyVarCoding(m)),"effects");
+end
+
+function missing = omittedEffectsWildcardNames(m,allFeNames)
+% Return omitted categorical levels represented by the model terms.
+inModel = m.VariableInfo.InModel;
+allVariables = string(m.VariableInfo.Properties.RowNames);
+categorical = inModel & m.VariableInfo.IsCategorical;
+categoricalNames = allVariables(categorical);
+categoricalRanges = m.VariableInfo.Range(categorical);
+missing = strings(1,0);
+
+for variableIx = 1:numel(categoricalNames)
+    levels = string(categoricalRanges{variableIx});
+    names = categoricalNames(variableIx) + "_" + levels;
+    if any(ismember(names,allFeNames))
+        missing = [missing, setdiff(names,allFeNames,'stable')]; %#ok<AGROW>
+    end
+end
+
+interactionNames = allFeNames(contains(allFeNames,":"));
+for interactionIx = 1:numel(interactionNames)
+    factors = split(interactionNames(interactionIx),":");
+    options = cell(size(factors));
+    valid = true;
+    for factorIx = 1:numel(factors)
+        categoricalIx = [];
+        for candidateIx = 1:numel(categoricalNames)
+            levels = string(categoricalRanges{candidateIx});
+            if any(categoricalNames(candidateIx) + "_" + levels == ...
+                    factors(factorIx))
+                categoricalIx = candidateIx;
+                break
+            end
+        end
+        if isempty(categoricalIx)
+            continuousIx = allVariables == factors(factorIx) & inModel & ...
+                ~m.VariableInfo.IsCategorical;
+            if any(continuousIx)
+                options{factorIx} = factors(factorIx);
+            else
+                valid = false;
+            end
+        else
+            levels = string(categoricalRanges{categoricalIx});
+            options{factorIx} = categoricalNames(categoricalIx) + "_" + levels;
+        end
+    end
+    if ~valid
+        continue
+    end
+    terms = "";
+    for factorIx = 1:numel(factors)
+        nextTerms = strings(0,1);
+        for termIx = 1:numel(terms)
+            for optionIx = 1:numel(options{factorIx})
+                if terms(termIx) == ""
+                    nextTerms(end+1,1) = options{factorIx}(optionIx); %#ok<AGROW>
+                else
+                    nextTerms(end+1,1) = terms(termIx) + ":" + ...
+                        options{factorIx}(optionIx); %#ok<AGROW>
+                end
+            end
+        end
+        terms = nextTerms;
+    end
+    missing = [missing, setdiff(terms.',allFeNames,'stable')]; %#ok<AGROW>
+end
+missing = unique(missing,'stable');
 end
 
 function [handled,contrast,coefficientIx] = omittedEffectsTerm( ...

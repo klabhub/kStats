@@ -10,15 +10,14 @@ classdef plotCoefficientsTest < matlab.unittest.TestCase
     end
 
     methods (Test)
-        function testAddInterceptSingleCategoricalReference(testCase)
+        function testSingleCategoricalReference(testCase)
             m = testCase.makeModel("reference",1);
             [estimate,low,high,labels] = testCase.plot(m);
 
             coefficientNames = string(m.CoefficientNames);
             beta = m.Coefficients.Estimate;
-            intercept = beta(coefficientNames == "(Intercept)");
             represented = coefficientNames ~= "(Intercept)";
-            expected = intercept + beta(represented);
+            expected = beta(represented);
 
             testCase.verifyEqual(labels, coefficientNames(represented).');
             testCase.verifyEqual(estimate, expected, AbsTol=1e-10);
@@ -26,8 +25,7 @@ classdef plotCoefficientsTest < matlab.unittest.TestCase
             testCase.verifyTrue(all(high >= estimate));
 
             target = coefficientNames == "A_b";
-            contrast = double(coefficientNames == "(Intercept)") + ...
-                double(coefficientNames == "A_b");
+            contrast = double(coefficientNames == "A_b");
             se = sqrt(contrast*m.CoefficientCovariance*contrast');
             critical = (m.Coefficients.Upper(target) - ...
                 m.Coefficients.Estimate(target))/m.Coefficients.SE(target);
@@ -38,32 +36,31 @@ classdef plotCoefficientsTest < matlab.unittest.TestCase
                 estimate(targetIndex) + critical*se, AbsTol=1e-10);
         end
 
-        function testAddInterceptSingleCategoricalEffects(testCase)
+        function testSingleCategoricalEffects(testCase)
             m = testCase.makeModel("effects",1);
             [estimate,low,high,labels] = testCase.plot(m);
 
             coefficientNames = string(m.CoefficientNames);
             beta = m.Coefficients.Estimate;
-            intercept = beta(coefficientNames == "(Intercept)");
             represented = coefficientNames( ...
                 startsWith(coefficientNames,"A_"));
-            expected = intercept + beta(ismember(coefficientNames,represented));
+            expected = [beta(ismember(coefficientNames,represented)); ...
+                -sum(beta(ismember(coefficientNames,represented)))];
 
-            testCase.verifyEqual(labels,represented.');
+            testCase.verifyEqual(labels,[represented(:); "A_c"]);
             testCase.verifyEqual(estimate, expected, AbsTol=1e-10);
             testCase.verifyEmpty(intersect(labels,"(Intercept)"));
             testCase.verifyTrue(all(low <= estimate));
             testCase.verifyTrue(all(high >= estimate));
         end
 
-        function testAddInterceptOmittedEffectsLevel(testCase)
+        function testOmittedEffectsLevel(testCase)
             m = testCase.makeModel("effects",1);
             [estimate,low,high,labels] = testCase.plot(m,"A_c");
 
             coefficientNames = string(m.CoefficientNames);
             beta = m.Coefficients.Estimate;
-            contrast = double(coefficientNames == "(Intercept)") - ...
-                double(startsWith(coefficientNames,"A_"));
+            contrast = -double(startsWith(coefficientNames,"A_"));
             expected = contrast * beta;
 
             testCase.verifyEqual(labels,"A_c");
@@ -84,15 +81,14 @@ classdef plotCoefficientsTest < matlab.unittest.TestCase
             testCase.verifyEqual(estimate,expected,AbsTol=1e-10);
         end
 
-        function testAddInterceptTwoCategoricalsReference(testCase)
+        function testTwoCategoricalsReference(testCase)
             m = testCase.makeModel("reference",2);
             [estimate,low,high,labels] = testCase.plot(m);
 
             coefficientNames = string(m.CoefficientNames);
             beta = m.Coefficients.Estimate;
-            intercept = beta(coefficientNames == "(Intercept)");
             represented = coefficientNames ~= "(Intercept)";
-            expected = intercept + beta(represented);
+            expected = beta(represented);
 
             testCase.verifyEqual(labels,coefficientNames(represented).');
             testCase.verifyEqual(estimate, expected, AbsTol=1e-10);
@@ -105,25 +101,22 @@ classdef plotCoefficientsTest < matlab.unittest.TestCase
             coefficientNames = string(m.CoefficientNames);
             interaction = coefficientNames == "A_b:B_y";
             beta = m.Coefficients.Estimate(interaction);
-            intercept = m.Coefficients.Estimate( ...
-                coefficientNames == "(Intercept)");
 
             [estimate,low,high,labels] = testCase.plot(m,"B_y:A_b");
 
             testCase.verifyEqual(labels,"B_y:A_b");
-            testCase.verifyEqual(estimate,intercept + beta,AbsTol=1e-10);
+            testCase.verifyEqual(estimate,beta,AbsTol=1e-10);
             testCase.verifyLessThanOrEqual(low,estimate);
             testCase.verifyGreaterThanOrEqual(high,estimate);
         end
 
-        function testAddInterceptOmittedEffectsInteractionTerm(testCase)
+        function testOmittedEffectsInteractionTerm(testCase)
             m = testCase.makeInteractionModel("effects");
             [estimate,low,high,labels] = testCase.plot(m,"A_b:B_y");
 
             coefficientNames = string(m.CoefficientNames);
             beta = m.Coefficients.Estimate;
-            contrast = double(coefficientNames == "(Intercept)") + ...
-                double(coefficientNames == "A_a:B_x");
+            contrast = double(coefficientNames == "A_a:B_x");
             expected = contrast * beta;
 
             testCase.verifyEqual(labels,"A_b:B_y");
@@ -132,14 +125,13 @@ classdef plotCoefficientsTest < matlab.unittest.TestCase
             testCase.verifyGreaterThanOrEqual(high,estimate);
         end
 
-        function testAddInterceptPartlyOmittedEffectsInteractionTerm(testCase)
+        function testPartlyOmittedEffectsInteractionTerm(testCase)
             m = testCase.makeInteractionModel("effects");
             [estimate,low,high,labels] = testCase.plot(m,"A_a:B_y");
 
             coefficientNames = string(m.CoefficientNames);
             beta = m.Coefficients.Estimate;
-            contrast = double(coefficientNames == "(Intercept)") - ...
-                double(coefficientNames == "A_a:B_x");
+            contrast = -double(coefficientNames == "A_a:B_x");
             expected = contrast * beta;
 
             testCase.verifyEqual(labels,"A_a:B_y");
@@ -148,14 +140,13 @@ classdef plotCoefficientsTest < matlab.unittest.TestCase
             testCase.verifyGreaterThanOrEqual(high,estimate);
         end
 
-        function testAddInterceptOmittedEffectsLevelWithContinuousInteraction(testCase)
+        function testOmittedEffectsLevelWithContinuousInteraction(testCase)
             m = testCase.makeContinuousInteractionModel;
             [estimate,low,high,labels] = testCase.plot(m,"A_b:X");
 
             coefficientNames = string(m.CoefficientNames);
             beta = m.Coefficients.Estimate;
-            contrast = double(coefficientNames == "(Intercept)") - ...
-                double(coefficientNames == "A_a:X");
+            contrast = -double(coefficientNames == "A_a:X");
             expected = contrast * beta;
 
             testCase.verifyEqual(labels,"A_b:X");
@@ -164,14 +155,24 @@ classdef plotCoefficientsTest < matlab.unittest.TestCase
             testCase.verifyGreaterThanOrEqual(high,estimate);
         end
 
-        function testWildcardOnlyIncludesRepresentedInteractionTerms(testCase)
+        function testWildcardIncludesOmittedInteractionTerms(testCase)
             m = testCase.makeInteractionModel("effects");
 
             [~,~,~,labels] = testCase.plot(m);
 
             coefficientNames = string(m.CoefficientNames);
-            expected = coefficientNames(coefficientNames ~= "(Intercept)");
-            testCase.verifyEqual(labels,expected.');
+            coefficientNames = coefficientNames(:);
+            expected = [coefficientNames(coefficientNames ~= "(Intercept)"); ...
+                "A_b"; "B_y"; "A_a:B_y"; "A_b:B_x"; "A_b:B_y"];
+            testCase.verifyEqual(labels,expected);
+        end
+
+        function testWildcardMinusExcludesIntercept(testCase)
+            m = testCase.makeModel("effects",1);
+            [~,~,~,labels] = testCase.plotWithoutIntercept(m,"*-");
+
+            testCase.verifyFalse(any(labels == "(Intercept)"));
+            testCase.verifyEqual(labels, ["A_a"; "A_b"; "A_c"]);
         end
     end
 
@@ -225,12 +226,11 @@ classdef plotCoefficientsTest < matlab.unittest.TestCase
     methods (Static, Access=private)
         function [estimate,low,high,labels] = plot(m,fe)
             if nargin < 2
-                fe = "*";
+                fe = "*-";
             end
             figureHandle = figure('Visible','off');
             cleanup = onCleanup(@() close(figureHandle));
-            [estimate,low,high] = lm.plotCoefficients(m,fe,[], ...
-                "none",'addIntercept',true);
+            [estimate,low,high] = lm.plotCoefficients(m,fe,[],"none");
             labels = string(get(gca,'XTickLabel'));
             labels = labels(:);
         end
@@ -238,8 +238,7 @@ classdef plotCoefficientsTest < matlab.unittest.TestCase
         function [estimate,low,high,labels] = plotWithoutIntercept(m,fe)
             figureHandle = figure('Visible','off');
             cleanup = onCleanup(@() close(figureHandle));
-            [estimate,low,high] = lm.plotCoefficients(m,fe,[], ...
-                "none",'addIntercept',false);
+            [estimate,low,high] = lm.plotCoefficients(m,fe,[],"none");
             labels = string(get(gca,'XTickLabel'));
             labels = labels(:);
         end
