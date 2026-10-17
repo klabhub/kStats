@@ -29,6 +29,23 @@ classdef plotPredictTest < matlab.unittest.TestCase
                 'lm:plotPredict:ContinuousValueRequired');
         end
 
+        function testContinuousValuesPairWithCategoricalConditions(testCase)
+            m = testCase.makeContinuousModel();
+            figureHandle = figure('Visible','off');
+            testCase.addTeardown(@() close(figureHandle));
+
+            continuousValues = table((1:3)', 'VariableNames', {'X'});
+            [prediction,low,high,conditions] = lm.plotPredict(m, ...
+                'continuousValues',continuousValues);
+
+            testCase.verifySize(prediction,[3 1]);
+            testCase.verifySize(low,[3 1]);
+            testCase.verifySize(high,[3 1]);
+            testCase.verifySize(conditions,[3 3]);
+            testCase.verifyEqual(conditions.X,(1:3)');
+            testCase.verifyEqual(string(conditions.A),["a";"b";"c"]);
+        end
+
         function testSignificantOnlyUsesConfidenceIntervals(testCase)
             m = testCase.makeCategoricalModel();
             figureHandle = figure('Visible','off');

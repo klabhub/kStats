@@ -5,9 +5,11 @@ function [prediction,low,high,conditions] = plotPredict(m,pv)
 %   response for every row, and plots the predictions with confidence
 %   intervals.
 %
-%   [...] = plotPredict(M,ContinuousValues=VALUES) supplies one row of
-%   values for every continuous fixed-effect predictor. VALUES must be a
-%   table with one scalar variable for each continuous predictor.
+%   [...] = plotPredict(M,ContinuousValues=VALUES) supplies values for the
+%   continuous fixed-effect predictors. VALUES must be a table with one
+%   variable for each continuous predictor. Scalar values are used for all
+%   categorical combinations. If a value has one entry for every generated
+%   categorical condition, it is paired with those conditions row by row.
 %
 %   [...] = plotPredict(...,sigOnly=true) plots and returns only predictions
 %   whose confidence intervals exclude zero.
@@ -157,41 +159,60 @@ for predictorIx = 1:numel(predictorNames)
         categoriesForPredictor{predictorIx} = levels;
         values{predictorIx} = levels;
     else
-        if height(continuous) ~= 1 || ...
-                ~ismember(predictorNames(predictorIx),string(continuous.Properties.VariableNames))
+        if ~ismember(predictorNames(predictorIx), ...
+                string(continuous.Properties.VariableNames))
             error('lm:plotPredict:ContinuousValueRequired', ...
-                ['Continuous predictor %s requires one scalar value in ' ...
+                ['Continuous predictor %s requires a value in ' ...
                 'ContinuousValues.'],predictorNames(predictorIx));
         end
         value = continuous.(predictorNames(predictorIx));
-        if ~isscalar(value)
-            error('lm:plotPredict:ContinuousValueRequired', ...
-                'Continuous predictor %s must have one scalar value.', ...
-                predictorNames(predictorIx));
-        end
         values{predictorIx} = value;
     end
 end
 
-grid = cell(1,numel(values));
-gridInputs = values;
+categoricalInputs = values;
+continuousHeights = ones(1,numel(values));
 for predictorIx = 1:numel(values)
-    if ~isCategorical(predictorIx)
-        gridInputs{predictorIx} = values{predictorIx};
+    if isCategorical(predictorIx)
+        continue
     end
+    continuousHeights(predictorIx) = numel(values{predictorIx});
+    categoricalInputs{predictorIx} = values{predictorIx}(1);
 end
-[grid{:}] = ndgrid(gridInputs{:});
-nRows = numel(grid{1});
+
+categoricalGrid = cell(1,numel(values));
+[categoricalGrid{:}] = ndgrid(categoricalInputs{:});
+nCategoricalRows = numel(categoricalGrid{1});
+nonScalarHeights = continuousHeights(~isCategorical);
+nonScalarHeights = nonScalarHeights(nonScalarHeights > 1);
+if ~isempty(nonScalarHeights) && ...
+        (any(nonScalarHeights ~= nonScalarHeights(1)) || ...
+        ~ismember(nonScalarHeights(1),[1 nCategoricalRows]))
+    error('lm:plotPredict:ContinuousValueLengthMismatch', ...
+        ['Non-scalar continuous values must have one entry for every ' ...
+        'categorical condition and must have matching lengths.']);
+end
+if isempty(nonScalarHeights)
+    nRows = nCategoricalRows;
+else
+    nRows = nonScalarHeights(1);
+end
+
 conditions = table();
 for predictorIx = 1:numel(predictorNames)
     name = predictorNames(predictorIx);
     if isCategorical(predictorIx)
         levels = categoriesForPredictor{predictorIx};
         observed = m.Variables.(name);
-        conditions.(name) = matchingClass(string(grid{predictorIx}(:)), ...
+        conditions.(name) = matchingClass(string(categoricalGrid{predictorIx}(:)), ...
             observed,levels);
     else
-        conditions.(name) = repmat(grid{predictorIx}(1),nRows,1);
+        value = values{predictorIx};
+        if isscalar(value)
+            conditions.(name) = repmat(value,nRows,1);
+        else
+            conditions.(name) = value(:);
+        end
     end
 end
 
